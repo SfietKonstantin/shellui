@@ -30,7 +30,7 @@ impl IoErrorExt for Error {
             let errors = ErrorIterator::new(Some(source))
                 .enumerate()
                 .map(|(i, error)| {
-                    format!("  {} - {error}", i + 1)
+                    format!("  ({}) {error}", i + 1)
                         .white()
                         .dimmed()
                         .to_string()
@@ -106,7 +106,7 @@ mod tests {
         }
         {
             let error = Error::other("Test").with_context("Failure").to_cli_string();
-            assert_eq!(error, "Error: Failure\nCaused by:\n  1 - Test")
+            assert_eq!(error, "Error: Failure\nCaused by:\n  (1) Test")
         }
         {
             let error = Error::other("Error 2")
@@ -115,7 +115,7 @@ mod tests {
                 .to_cli_string();
             assert_eq!(
                 error,
-                "Error: Failure\nCaused by:\n  1 - Error 1\n  2 - Error 2"
+                "Error: Failure\nCaused by:\n  (1) Error 1\n  (2) Error 2"
             )
         }
     }

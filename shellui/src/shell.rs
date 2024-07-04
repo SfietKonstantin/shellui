@@ -70,7 +70,7 @@ where
                 Ok(()) => Ok(ShellAction::None),
                 Err(error) => {
                     error.display_cli();
-                    Err(error)
+                    Ok(ShellAction::None)
                 }
             },
             ShellCommand::Clear => Ok(ShellAction::ClearScreen),
@@ -93,14 +93,11 @@ where
     loop {
         let readline = rl.readline("> ");
         match readline {
-            Ok(line) => {
-                match ShellArgs::<T>::try_run(&line)? {
-                    ShellAction::None => {}
-                    ShellAction::ClearScreen => rl.clear_screen().map_err(Error::other)?,
-                    ShellAction::Eof => break,
-                }
-                rl.add_history_entry(line.as_str()).map_err(Error::other)?;
-            }
+            Ok(line) => match ShellArgs::<T>::try_run(&line)? {
+                ShellAction::None => {}
+                ShellAction::ClearScreen => rl.clear_screen().map_err(Error::other)?,
+                ShellAction::Eof => break,
+            },
             Err(ReadlineError::Interrupted) => {
                 // Continue
             }

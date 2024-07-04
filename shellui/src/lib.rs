@@ -5,6 +5,7 @@ mod shell;
 use crate::errors::IoErrorExt;
 use clap::{Parser, Subcommand};
 use std::io::Result;
+use std::process::exit;
 
 /// Clap extension to enable shell
 ///
@@ -31,19 +32,23 @@ pub trait ShellParser: Parser {
 ///
 /// Will launch the entrypoint being passed, either running as a CLI
 /// or spawning a shell.
-pub fn launch<T>() -> Result<()>
+pub fn launch<T>()
+where
+    T: ShellParser,
+{
+    if let Err(error) = handle_launch::<T>() {
+        error.display_cli();
+        exit(1);
+    }
+}
+
+fn handle_launch<T>() -> Result<()>
 where
     T: ShellParser,
 {
     let args = T::parse();
     if let Some(commands) = args.try_get_command() {
-        match T::run_command(&commands) {
-            Ok(()) => Ok(()),
-            Err(error) => {
-                error.display_cli();
-                Err(error)
-            }
-        }
+        T::run_command(&commands)
     } else {
         shell::launch_shell::<T>()
     }
