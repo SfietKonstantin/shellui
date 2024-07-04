@@ -1,7 +1,7 @@
 mod ui;
 
 use self::ui::ShellUi;
-use crate::errors::IoErrorExt;
+use crate::errors::DisplayCli;
 use crate::ShellParser;
 use clap::{CommandFactory, Parser, Subcommand};
 use rustyline::error::ReadlineError;

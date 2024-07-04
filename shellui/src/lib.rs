@@ -2,7 +2,7 @@ pub mod errors;
 pub mod input;
 mod shell;
 
-use crate::errors::IoErrorExt;
+use crate::errors::DisplayCli;
 use clap::{Parser, Subcommand};
 use std::io::Result;
 use std::process::exit;

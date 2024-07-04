@@ -3,24 +3,54 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io::Error;
 
-pub trait IoErrorExt {
-    fn with_context<S>(self, context: S) -> Self
+pub trait WithContext {
+    type Output;
+    fn with_context<S>(self, context: S) -> Self::Output
     where
         S: ToString;
+}
+
+impl WithContext for Error {
+    type Output = Error;
+    fn with_context<S>(self, context: S) -> Self::Output
+    where
+        S: ToString,
+    {
+        Error::other(ErrorWrapper::new(context.to_string(), self))
+    }
+}
+
+impl<T> WithContext for Option<T> {
+    type Output = Result<T, Error>;
+    fn with_context<S>(self, context: S) -> Self::Output
+    where
+        S: ToString,
+    {
+        match self {
+            Some(value) => Ok(value),
+            None => Err(Error::other(context.to_string())),
+        }
+    }
+}
+
+impl<T> WithContext for Result<T, Error> {
+    type Output = Result<T, Error>;
+    fn with_context<S>(self, context: S) -> Self::Output
+    where
+        S: ToString,
+    {
+        self.map_err(|error| error.with_context(context))
+    }
+}
+
+pub(crate) trait DisplayCli {
     fn to_cli_string(&self) -> String;
     fn display_cli(&self) {
         eprintln!("{}", self.to_cli_string());
     }
 }
 
-impl IoErrorExt for Error {
-    fn with_context<S>(self, context: S) -> Self
-    where
-        S: ToString,
-    {
-        Error::other(ErrorWrapper::new(context.to_string(), self))
-    }
-
+impl DisplayCli for Error {
     fn to_cli_string(&self) -> String {
         let message = format!("Error: {}", self).red().to_string();
 
