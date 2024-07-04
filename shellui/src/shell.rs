@@ -7,7 +7,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use rustyline::error::ReadlineError;
 use rustyline::history::FileHistory;
 use rustyline::{CompletionType, Config, Editor};
-use std::io::{Error, Result};
+use std::io::{Error, ErrorKind, Result};
 use std::iter;
 
 #[derive(Parser)]
@@ -68,10 +68,13 @@ where
         match self {
             ShellCommand::Common(command) => match T::run_command(context, command) {
                 Ok(()) => Ok(ShellAction::None),
-                Err(error) => {
-                    error.display_cli();
-                    Ok(ShellAction::None)
-                }
+                Err(error) => match error.kind() {
+                    ErrorKind::Interrupted => Ok(ShellAction::None),
+                    _ => {
+                        error.display_cli();
+                        Ok(ShellAction::None)
+                    }
+                },
             },
             ShellCommand::Clear => Ok(ShellAction::ClearScreen),
             ShellCommand::Exit => Ok(ShellAction::Eof),

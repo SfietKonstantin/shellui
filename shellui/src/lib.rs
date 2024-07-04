@@ -4,7 +4,7 @@ mod shell;
 
 use crate::errors::DisplayCli;
 use clap::{Parser, Subcommand};
-use std::io::Result;
+use std::io::{ErrorKind, Result};
 use std::process::exit;
 
 /// Shell context
@@ -56,7 +56,13 @@ where
     let mut context = T::Context::new()?;
     let args = T::parse();
     if let Some(commands) = args.try_get_command() {
-        T::run_command(&mut context, &commands)
+        match T::run_command(&mut context, &commands) {
+            Ok(()) => Ok(()),
+            Err(error) => match error.kind() {
+                ErrorKind::Interrupted => Ok(()),
+                _ => Err(error),
+            },
+        }
     } else {
         shell::launch_shell::<T>(&mut context)
     }
