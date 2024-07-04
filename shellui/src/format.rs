@@ -2,13 +2,14 @@ use crate::errors::WithContext;
 use colored::Colorize;
 use colored_json::to_colored_json_auto;
 use serde::Serialize;
+pub use shellui_derive::ObjectFormatter;
 use std::cmp::max;
 use std::io::Result;
 use std::iter;
 
 pub trait ObjectFormatter {
     type Header: 'static + Clone + AsRef<str>;
-    fn headers() -> &'static [Self::Header];
+    fn headers() -> Vec<Self::Header>;
     fn format_value(&self, header: &Self::Header) -> String;
 }
 
@@ -52,7 +53,7 @@ where
     T: ObjectFormatter,
 {
     let headers = T::headers();
-    for line in format_list(elements, headers) {
+    for line in format_list(elements, &headers) {
         println!("{line}")
     }
 }
@@ -83,7 +84,7 @@ where
     T: ObjectFormatter,
 {
     let headers = T::headers();
-    for line in format_single(element, headers) {
+    for line in format_single(element, &headers) {
         println!("{line}")
     }
 }
@@ -137,8 +138,8 @@ mod tests {
     impl ObjectFormatter for TestValue {
         type Header = &'static str;
 
-        fn headers() -> &'static [Self::Header] {
-            &["id", "label", "a very long header"]
+        fn headers() -> Vec<Self::Header> {
+            vec!["id", "label", "a very long header"]
         }
 
         fn format_value(&self, header: &Self::Header) -> String {
@@ -159,7 +160,7 @@ mod tests {
             TestValue("1", "label 1", "value"),
             TestValue("a very long id", "l2", "value2"),
         ];
-        let table = format_list(&elements, TestValue::headers());
+        let table = format_list(&elements, &TestValue::headers());
         let expected = vec![
             "id             label   a very long header",
             "1              label 1 value             ",
@@ -172,7 +173,7 @@ mod tests {
     fn test_format_single() {
         env::set_var("NO_COLOR", "1");
 
-        let table = format_single(&TestValue("1", "label 1", "value"), TestValue::headers());
+        let table = format_single(&TestValue("1", "label 1", "value"), &TestValue::headers());
         let expected = vec![
             "id                 1",
             "label              label 1",
