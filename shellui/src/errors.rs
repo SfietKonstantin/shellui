@@ -10,16 +10,6 @@ pub trait WithContext {
         S: ToString;
 }
 
-impl WithContext for Error {
-    type Output = Error;
-    fn with_context<S>(self, context: S) -> Self::Output
-    where
-        S: ToString,
-    {
-        Error::other(ErrorWrapper::new(context.to_string(), self))
-    }
-}
-
 impl<T> WithContext for Option<T> {
     type Output = Result<T, Error>;
     fn with_context<S>(self, context: S) -> Self::Output
@@ -33,14 +23,25 @@ impl<T> WithContext for Option<T> {
     }
 }
 
-impl<T> WithContext for Result<T, Error> {
+impl<T, E> WithContext for Result<T, E>
+where
+    E: StdError + Send + Sync + 'static,
+{
     type Output = Result<T, Error>;
     fn with_context<S>(self, context: S) -> Self::Output
     where
         S: ToString,
     {
-        self.map_err(|error| error.with_context(context))
+        self.map_err(|error| with_context(error, context))
     }
+}
+
+fn with_context<E, S>(error: E, context: S) -> Error
+where
+    E: StdError + Send + Sync + 'static,
+    S: ToString,
+{
+    Error::other(ErrorWrapper::new(context.to_string(), error))
 }
 
 pub(crate) trait DisplayCli {
@@ -74,24 +75,27 @@ impl DisplayCli for Error {
 }
 
 #[derive(Debug)]
-struct ErrorWrapper {
+struct ErrorWrapper<E> {
     message: String,
-    source: Error,
+    source: E,
 }
 
-impl ErrorWrapper {
-    fn new(message: String, source: Error) -> Self {
+impl<E> ErrorWrapper<E> {
+    fn new(message: String, source: E) -> Self {
         ErrorWrapper { message, source }
     }
 }
 
-impl fmt::Display for ErrorWrapper {
+impl<E> fmt::Display for ErrorWrapper<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.message)
     }
 }
 
-impl StdError for ErrorWrapper {
+impl<E> StdError for ErrorWrapper<E>
+where
+    E: StdError + Send + Sync + 'static,
+{
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         Some(&self.source)
     }
@@ -135,13 +139,11 @@ mod tests {
             assert_eq!(error, "Error: Test")
         }
         {
-            let error = Error::other("Test").with_context("Failure").to_cli_string();
+            let error = with_context(Error::other("Test"), "Failure").to_cli_string();
             assert_eq!(error, "Error: Failure\nCaused by:\n  (1) Test")
         }
         {
-            let error = Error::other("Error 2")
-                .with_context("Error 1")
-                .with_context("Failure")
+            let error = with_context(with_context(Error::other("Error 2"), "Error 1"), "Failure")
                 .to_cli_string();
             assert_eq!(
                 error,
