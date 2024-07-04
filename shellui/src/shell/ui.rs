@@ -28,14 +28,14 @@ impl CommandLine {
     }
 }
 
-pub struct Ui {
+pub struct ShellUi {
     commands: Vec<CommandLine>,
 }
 
-impl Ui {
+impl ShellUi {
     pub fn new(command: Command) -> Self {
         let commands = Self::parse_command_tree(&command);
-        Ui { commands }
+        ShellUi { commands }
     }
 
     fn parse_command_tree(command: &Command) -> Vec<CommandLine> {
@@ -171,7 +171,7 @@ impl Ui {
     }
 }
 
-impl Completer for Ui {
+impl Completer for ShellUi {
     type Candidate = String;
 
     fn complete(
@@ -184,13 +184,13 @@ impl Completer for Ui {
     }
 }
 
-impl Highlighter for Ui {
+impl Highlighter for ShellUi {
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
         Cow::Owned(hint.white().dimmed().to_string())
     }
 }
 
-impl Validator for Ui {}
+impl Validator for ShellUi {}
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UiHint(String, Option<String>);
@@ -205,7 +205,7 @@ impl Hint for UiHint {
     }
 }
 
-impl Hinter for Ui {
+impl Hinter for ShellUi {
     type Hint = UiHint;
 
     fn hint(&self, line: &str, _pos: usize, _ctx: &Context<'_>) -> Option<Self::Hint> {
@@ -213,7 +213,7 @@ impl Hinter for Ui {
     }
 }
 
-impl Helper for Ui {}
+impl Helper for ShellUi {}
 
 #[cfg(test)]
 mod tests {
@@ -225,7 +225,7 @@ mod tests {
         let command = Command::new("test")
             .subcommand(Command::new("test1"))
             .subcommand(Command::new("test2"));
-        let hint = Ui::new(command).solve_hint("te");
+        let hint = ShellUi::new(command).solve_hint("te");
         assert_eq!(
             hint,
             Some(UiHint("st1".to_string(), Some("st1".to_string())))
@@ -237,7 +237,7 @@ mod tests {
         let command = Command::new("test")
             .subcommand(Command::new("test1"))
             .subcommand(Command::new("test2"));
-        let hint = Ui::new(command).solve_hint("test1");
+        let hint = ShellUi::new(command).solve_hint("test1");
         assert_eq!(hint, Some(UiHint("".to_string(), Some("".to_string()))));
     }
 
@@ -250,7 +250,7 @@ mod tests {
                     .subcommand(Command::new("test12")),
             )
             .subcommand(Command::new("test2"));
-        let hint = Ui::new(command).solve_hint("test1 t");
+        let hint = ShellUi::new(command).solve_hint("test1 t");
         assert_eq!(
             hint,
             Some(UiHint("est11".to_string(), Some("est11".to_string())))
@@ -262,7 +262,7 @@ mod tests {
         let command = Command::new("test")
             .subcommand(Command::new("test1"))
             .subcommand(Command::new("test2"));
-        let hint = Ui::new(command).solve_hint("a");
+        let hint = ShellUi::new(command).solve_hint("a");
         assert_eq!(hint, None);
     }
 
@@ -275,7 +275,7 @@ mod tests {
                     .arg(Arg::new("arg2")),
             )
             .subcommand(Command::new("test2"));
-        let hint = Ui::new(command).solve_hint("test1 ");
+        let hint = ShellUi::new(command).solve_hint("test1 ");
         assert_eq!(hint, Some(UiHint("<arg1>".to_string(), None)));
     }
 
@@ -284,7 +284,7 @@ mod tests {
         let command = Command::new("test")
             .subcommand(Command::new("test1"))
             .subcommand(Command::new("test2"));
-        let complete = Ui::new(command).solve_complete("te", 1);
+        let complete = ShellUi::new(command).solve_complete("te", 1);
         assert_eq!(
             complete,
             Some((0, vec!["test1".to_string(), "test2".to_string()]))
@@ -300,7 +300,7 @@ mod tests {
                     .subcommand(Command::new("test12")),
             )
             .subcommand(Command::new("test2"));
-        let complete = Ui::new(command).solve_complete("test1 ", 6);
+        let complete = ShellUi::new(command).solve_complete("test1 ", 6);
         assert_eq!(
             complete,
             Some((
