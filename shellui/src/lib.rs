@@ -1,6 +1,8 @@
+pub mod errors;
 pub mod input;
 mod shell;
 
+use crate::errors::IoErrorExt;
 use clap::{Parser, Subcommand};
 use std::io::Result;
 
@@ -35,8 +37,13 @@ where
 {
     let args = T::parse();
     if let Some(commands) = args.try_get_command() {
-        T::run_command(&commands)?;
-        Ok(())
+        match T::run_command(&commands) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                error.display_cli();
+                Err(error)
+            }
+        }
     } else {
         shell::launch_shell::<T>()
     }

@@ -1,6 +1,7 @@
 mod ui;
 
 use self::ui::ShellUi;
+use crate::errors::IoErrorExt;
 use crate::ShellParser;
 use clap::{CommandFactory, Parser, Subcommand};
 use rustyline::error::ReadlineError;
@@ -65,10 +66,13 @@ where
 {
     fn run(&self) -> Result<ShellAction> {
         match self {
-            ShellCommand::Common(command) => {
-                T::run_command(command)?;
-                Ok(ShellAction::None)
-            }
+            ShellCommand::Common(command) => match T::run_command(command) {
+                Ok(()) => Ok(ShellAction::None),
+                Err(error) => {
+                    error.display_cli();
+                    Err(error)
+                }
+            },
             ShellCommand::Clear => Ok(ShellAction::ClearScreen),
             ShellCommand::Exit => Ok(ShellAction::Eof),
         }

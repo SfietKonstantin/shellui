@@ -25,7 +25,7 @@ pub fn get_string_input(label: &str) -> Result<String> {
     match name {
         Ok(value) => Ok(value),
         Err(error) => match error {
-            InquireError::NotTTY => Err(Error::other("Not TTY")),
+            InquireError::NotTTY => Err(Error::other("Not a TTY")),
             InquireError::InvalidConfiguration(error) => Err(Error::other(error)),
             InquireError::IO(error) => Err(error),
             InquireError::OperationCanceled | InquireError::OperationInterrupted => {
