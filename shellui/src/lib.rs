@@ -7,6 +7,11 @@ use clap::{Parser, Subcommand};
 use std::io::Result;
 use std::process::exit;
 
+/// Shell context
+pub trait Context: Sized {
+    fn new() -> Result<Self>;
+}
+
 /// Clap extension to enable shell
 ///
 /// This trait extension extends clap's `Parser` to enable
@@ -17,6 +22,8 @@ use std::process::exit;
 /// that optionally takes subcommands to either process the subcommand
 /// or enter in the shell.
 pub trait ShellParser: Parser {
+    /// Context
+    type Context: Context;
     /// Subcommands
     type Commands: Subcommand;
     /// Try get command
@@ -25,7 +32,7 @@ pub trait ShellParser: Parser {
     /// so that it can go into shell mode if the subcommand is not passed.
     fn try_get_command(self) -> Option<Self::Commands>;
     /// Run a command
-    fn run_command(command: &Self::Commands) -> Result<()>;
+    fn run_command(context: &mut Self::Context, command: &Self::Commands) -> Result<()>;
 }
 
 /// Launch a command
@@ -46,10 +53,11 @@ fn handle_launch<T>() -> Result<()>
 where
     T: ShellParser,
 {
+    let mut context = T::Context::new()?;
     let args = T::parse();
     if let Some(commands) = args.try_get_command() {
-        T::run_command(&commands)
+        T::run_command(&mut context, &commands)
     } else {
-        shell::launch_shell::<T>()
+        shell::launch_shell::<T>(&mut context)
     }
 }

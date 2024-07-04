@@ -23,13 +23,13 @@ impl<T> ShellArgs<T>
 where
     T: ShellParser,
 {
-    pub fn try_run(line: &str) -> Result<ShellAction> {
+    pub fn try_run(context: &mut T::Context, line: &str) -> Result<ShellAction> {
         let parsed = shell_words::split(line).map_err(Error::other)?;
 
         if !parsed.is_empty() {
             let iter = iter::once("shellui").chain(parsed.iter().map(String::as_str));
             match ShellArgs::<T>::try_parse_from(iter) {
-                Ok(args) => args.command.run(),
+                Ok(args) => args.command.run(context),
                 Err(error) => {
                     error.print()?;
                     Ok(ShellAction::None)
@@ -64,9 +64,9 @@ impl<T> ShellCommand<T>
 where
     T: ShellParser,
 {
-    fn run(&self) -> Result<ShellAction> {
+    fn run(&self, context: &mut T::Context) -> Result<ShellAction> {
         match self {
-            ShellCommand::Common(command) => match T::run_command(command) {
+            ShellCommand::Common(command) => match T::run_command(context, command) {
                 Ok(()) => Ok(ShellAction::None),
                 Err(error) => {
                     error.display_cli();
@@ -79,7 +79,7 @@ where
     }
 }
 
-pub fn launch_shell<T>() -> Result<()>
+pub fn launch_shell<T>(context: &mut T::Context) -> Result<()>
 where
     T: ShellParser,
 {
@@ -93,7 +93,7 @@ where
     loop {
         let readline = rl.readline("> ");
         match readline {
-            Ok(line) => match ShellArgs::<T>::try_run(&line)? {
+            Ok(line) => match ShellArgs::<T>::try_run(context, &line)? {
                 ShellAction::None => {}
                 ShellAction::ClearScreen => rl.clear_screen().map_err(Error::other)?,
                 ShellAction::Eof => break,
