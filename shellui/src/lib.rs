@@ -6,11 +6,13 @@ mod shell;
 use crate::errors::DisplayCli;
 use clap::{Parser, Subcommand};
 use std::io::{ErrorKind, Result};
+use std::path::PathBuf;
 use std::process::exit;
 
 /// Shell context
 pub trait Context: Sized {
     fn new() -> Result<Self>;
+    fn history_path(&self) -> Option<PathBuf>;
 }
 
 /// Clap extension to enable shell

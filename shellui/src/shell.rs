@@ -2,7 +2,7 @@ mod ui;
 
 use self::ui::ShellUi;
 use crate::errors::DisplayCli;
-use crate::ShellParser;
+use crate::{Context, ShellParser};
 use clap::{CommandFactory, Parser, Subcommand};
 use rustyline::error::ReadlineError;
 use rustyline::history::FileHistory;
@@ -86,12 +86,17 @@ pub fn launch_shell<T>(context: &mut T::Context) -> Result<()>
 where
     T: ShellParser,
 {
+    let history_path = context.history_path();
     let helper = ShellUi::new(ShellArgs::<T>::command());
     let config = Config::builder()
         .completion_type(CompletionType::List)
+        .auto_add_history(true)
         .build();
     let mut rl: Editor<ShellUi, FileHistory> = Editor::with_config(config).map_err(Error::other)?;
     rl.set_helper(Some(helper));
+    if let Some(history_path) = &history_path {
+        rl.load_history(&history_path).map_err(Error::other)?;
+    }
 
     loop {
         let readline = rl.readline("> ");
@@ -107,6 +112,10 @@ where
             Err(ReadlineError::Eof) => break,
             Err(_) => break,
         }
+    }
+
+    if let Some(history_path) = history_path {
+        rl.save_history(&history_path).map_err(Error::other)?;
     }
 
     Ok(())
