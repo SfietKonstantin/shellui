@@ -13,6 +13,48 @@ pub trait ObjectFormatter {
     fn format_value(&self, header: &Self::Header) -> String;
 }
 
+pub trait FormatField {
+    fn format_field(&self) -> String;
+}
+macro_rules! impl_format_field {
+    ($ty:ty) => {
+        impl FormatField for $ty {
+            fn format_field(&self) -> String {
+                self.to_string()
+            }
+        }
+    };
+}
+
+impl_format_field!(i32);
+impl_format_field!(i64);
+impl_format_field!(u32);
+impl_format_field!(u64);
+impl_format_field!(String);
+impl_format_field!(&str);
+
+impl FormatField for bool {
+    fn format_field(&self) -> String {
+        if *self {
+            "*".to_string()
+        } else {
+            String::new()
+        }
+    }
+}
+
+impl<T> FormatField for Option<T>
+where
+    T: FormatField,
+{
+    fn format_field(&self) -> String {
+        match self {
+            Some(value) => value.format_field(),
+            None => String::new(),
+        }
+    }
+}
+
 fn format_list<T>(elements: &[T], headers: &[T::Header]) -> Vec<String>
 where
     T: ObjectFormatter,

@@ -184,7 +184,7 @@ fn implement_format_single_value(mapping: &HeaderMapping) -> impl ToTokens {
             let access = format_access(*index, field);
             quote! {
                 if *header == #name {
-                    #access.to_string()
+                    shellui::format::FormatField::format_field(&#access)
                 }
             }
         }
