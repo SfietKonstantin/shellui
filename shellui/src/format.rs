@@ -10,6 +10,9 @@ use std::iter;
 pub trait ObjectFormatter {
     type Header: 'static + Clone + AsRef<str>;
     fn headers() -> Vec<Self::Header>;
+    fn headers_with_mode(_mode: &str) -> Vec<Self::Header> {
+        Self::headers()
+    }
     fn format_value(&self, header: &Self::Header) -> String;
 }
 
@@ -100,6 +103,16 @@ where
     }
 }
 
+pub fn print_list_with_mode<T>(elements: &[T], mode: &str)
+where
+    T: ObjectFormatter,
+{
+    let headers = T::headers_with_mode(mode);
+    for line in format_list(elements, &headers) {
+        println!("{line}")
+    }
+}
+
 fn format_single<T>(element: &T, headers: &[T::Header]) -> Vec<String>
 where
     T: ObjectFormatter,
@@ -126,6 +139,16 @@ where
     T: ObjectFormatter,
 {
     let headers = T::headers();
+    for line in format_single(element, &headers) {
+        println!("{line}")
+    }
+}
+
+pub fn print_single_with_mode<T>(element: &T, mode: &str)
+where
+    T: ObjectFormatter,
+{
+    let headers = T::headers_with_mode(mode);
     for line in format_single(element, &headers) {
         println!("{line}")
     }

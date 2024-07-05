@@ -1,142 +1,96 @@
-use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::{quote, quote_spanned, ToTokens};
+#![allow(clippy::manual_unwrap_or_default)]
+use darling::ast::Data;
+use darling::util::Ignored;
+use darling::{FromDeriveInput, FromField};
+use itertools::Itertools;
+use proc_macro2::{Span, TokenStream};
+use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, Attribute, Data, DeriveInput, Expr, Field, Fields, Lit};
+use syn::{parse_macro_input, DeriveInput, Generics, Ident, Index, Type};
 
-#[proc_macro_derive(ObjectFormatter, attributes(header))]
-pub fn display_cli(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-    let type_params = input.generics.type_params();
-    let (_, ty_generics, where_clause) = input.generics.split_for_impl();
-    let mapping = build_mapping(input.data);
-    let headers = implement_headers(&mapping);
-    let format_value = implement_format_value(&mapping);
+#[proc_macro_derive(ObjectFormatter, attributes(object_formatter))]
+pub fn display_cli(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let raw = parse_macro_input!(input as DeriveInput);
+    let input = FormatterInput::from_derive_input(&raw);
+    let expanded = match input {
+        Ok(input) => {
+            let headers = implement_headers(&input, implement_header);
+            let headers_with_mode = implement_headers(&input, implement_header_with_mode);
+            let format_value = implement_format_value(&input);
 
-    let expanded = quote! {
-        impl <#(#type_params,)*> shellui::format::ObjectFormatter for #name #ty_generics #where_clause {
-            type Header = &'static str;
+            let name = input.ident;
+            let type_params = input.generics.type_params();
+            let (_, ty_generics, where_clause) = input.generics.split_for_impl();
 
-            fn headers() -> Vec<Self::Header> {
-                #headers
+            quote! {
+                impl <#(#type_params,)*> shellui::format::ObjectFormatter for #name #ty_generics #where_clause {
+                    type Header = &'static str;
+
+                    fn headers() -> Vec<Self::Header> {
+                        #headers
+                    }
+
+                    fn headers_with_mode(mode: &str) -> Vec<Self::Header> {
+                        #headers_with_mode
+                    }
+
+                    fn format_value(&self, header: &Self::Header) -> String {
+                        #format_value
+                    }
+                }
             }
-
-            fn format_value(&self, header: &Self::Header) -> String {
-                #format_value
-            }
+        }
+        Err(error) => {
+            let message = error.to_string();
+            quote_spanned! { raw.ident.span() => compile_error!(#message); }
         }
     };
-    TokenStream::from(expanded)
+
+    proc_macro::TokenStream::from(expanded)
 }
 
-enum HeaderMapping {
-    InvalidHeaders(Vec<Attribute>),
-    TooManyHeaders(Field),
-    Mapping {
-        name: String,
-        index: usize,
-        field: Field,
-    },
-    InlineMapping {
-        index: usize,
-        field: Field,
-    },
+#[derive(Debug, FromDeriveInput)]
+#[darling(supports(struct_any))]
+struct FormatterInput {
+    ident: Ident,
+    generics: Generics,
+    data: Data<Ignored, FormatterField>,
 }
 
-fn build_mapping(data: Data) -> Result<Vec<HeaderMapping>, Span> {
-    match data {
-        Data::Enum(data) => Err(data.enum_token.span()),
-        Data::Struct(data) => {
-            let fields = match data.fields {
-                Fields::Named(fields) => fields.named.iter().cloned().collect::<Vec<_>>(),
-                Fields::Unnamed(fields) => fields.unnamed.iter().cloned().collect::<Vec<_>>(),
-                Fields::Unit => Vec::new(),
-            };
+#[derive(Debug, FromField)]
+#[darling(attributes(object_formatter))]
+struct FormatterField {
+    ident: Option<Ident>,
+    ty: Type,
 
-            let mapping = fields
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, field)| build_field_mapping(i, field))
-                .collect();
-            Ok(mapping)
-        }
-        Data::Union(data) => Err(data.union_token.span()),
+    #[darling(default)]
+    inline: bool,
+    #[darling(default)]
+    header: Option<String>,
+    #[darling(default)]
+    mode: Option<String>,
+}
+
+fn implement_headers<F>(input: &FormatterInput, implement_header: F) -> TokenStream
+where
+    F: Fn(&FormatterField) -> TokenStream,
+{
+    let data = input.data.as_ref();
+    let struct_data = data.take_struct();
+    let headers = struct_data
+        .iter()
+        .flat_map(|i| i.fields.iter().copied())
+        .map(implement_header);
+    quote! {
+        let mut headers = Vec::new();
+        #(#headers)*
+        headers
     }
 }
 
-fn build_field_mapping(index: usize, field: Field) -> Option<HeaderMapping> {
-    let (headers, failed) = field
-        .attrs
-        .clone()
-        .into_iter()
-        .filter_map(parse_attribute)
-        .fold(
-            (Vec::new(), Vec::new()),
-            |(mut headers, mut failed), result| {
-                match result {
-                    Ok(header) => headers.push(header),
-                    Err(attribute) => failed.push(attribute),
-                };
-                (headers, failed)
-            },
-        );
-
-    if failed.is_empty() {
-        let mut iter = headers.into_iter();
-        let first = iter.next();
-        let second = iter.next();
-
-        match (first, second) {
-            (None, None) => None,
-            (Some(header), None) => match header {
-                Header::Mapping(name) => Some(HeaderMapping::Mapping { name, index, field }),
-                Header::InlineMapping => Some(HeaderMapping::InlineMapping { index, field }),
-            },
-            _ => Some(HeaderMapping::TooManyHeaders(field)),
-        }
-    } else {
-        Some(HeaderMapping::InvalidHeaders(failed))
-    }
-}
-
-fn implement_headers(mapping: &Result<Vec<HeaderMapping>, Span>) -> impl ToTokens {
-    match mapping {
-        Ok(mapping) => {
-            let headers = mapping.iter().map(implement_header);
-            quote! {
-                let mut headers = Vec::new();
-                #(#headers)*
-                headers
-            }
-        }
-        Err(span) => {
-            let span = *span;
-            quote_spanned! { span => compile_error!("Unsupported type"); }
-        }
-    }
-}
-
-fn implement_header(mapping: &HeaderMapping) -> impl ToTokens {
-    match mapping {
-        HeaderMapping::InvalidHeaders(attributes) => {
-            let errors = attributes.iter()
-                .map(|attr| {
-                    quote_spanned! { attr.bracket_token.span => compile_error!("Unsupported header attribute"); }
-                });
-            quote! {
-                #(#errors)*
-            }
-        }
-        HeaderMapping::TooManyHeaders(field) => {
-            quote_spanned! { field.ident.span() => compile_error!("Too many header attributes"); }
-        }
-        HeaderMapping::Mapping { name, .. } => {
-            quote! {
-                headers.push(#name);
-            }
-        }
-        HeaderMapping::InlineMapping { field, .. } => {
+fn implement_header(field: &FormatterField) -> TokenStream {
+    match (&field.inline, &field.header, &field.mode) {
+        (true, None, None) => {
             let ty = &field.ty;
             quote! {
                 for header in #ty::headers() {
@@ -144,135 +98,114 @@ fn implement_header(mapping: &HeaderMapping) -> impl ToTokens {
                 }
             }
         }
-    }
-}
-
-fn implement_format_value(mapping: &Result<Vec<HeaderMapping>, Span>) -> impl ToTokens {
-    match mapping {
-        Ok(mapping) => {
-            let mut iter = mapping.iter();
-            if let Some(first) = iter.next() {
-                let first = implement_format_single_value(first);
-                let rest = iter.map(|mapping| {
-                    let access = implement_format_single_value(mapping);
-                    quote! {
-                        else #access
-                    }
-                });
-
-                quote! {
-                    #first
-                    #(#rest)*
-                    else {
-                        String::new()
-                    }
-                }
-            } else {
-                quote! { String::new() }
+        (false, Some(header), None) => {
+            quote! {
+                headers.push(#header);
             }
         }
-        Err(_) => {
+        (false, None, None) | (false, Some(_), Some(_)) => {
             quote! {}
         }
+        _ => {
+            quote_spanned! { field.ident.span() => compile_error!("Invalid object_formatter attribute"); }
+        }
     }
 }
 
-fn implement_format_single_value(mapping: &HeaderMapping) -> impl ToTokens {
-    match mapping {
-        HeaderMapping::InvalidHeaders(_) | HeaderMapping::TooManyHeaders(_) => quote! {},
-        HeaderMapping::Mapping { name, index, field } => {
-            let access = format_access(*index, field);
+fn implement_header_with_mode(field: &FormatterField) -> TokenStream {
+    match (&field.inline, &field.header, &field.mode) {
+        (true, None, None) => {
+            let ty = &field.ty;
             quote! {
-                if *header == #name {
-                    shellui::format::FormatField::format_field(&#access)
+                for header in #ty::headers() {
+                    headers.push(header);
                 }
             }
         }
-        HeaderMapping::InlineMapping { index, field } => {
-            let ty = &field.ty;
-            let access = format_access(*index, field);
+        (false, Some(header), None) => {
             quote! {
-                if #ty::headers().contains(header) {
+                headers.push(#header);
+            }
+        }
+        (false, Some(header), Some(mode)) => {
+            quote! {
+                if mode == #mode {
+                    headers.push(#header);
+                }
+            }
+        }
+        (false, None, None) => {
+            quote! {}
+        }
+        _ => {
+            quote_spanned! { field.ident.span() => compile_error!("Invalid object_formatter attribute"); }
+        }
+    }
+}
+
+fn implement_format_value(input: &FormatterInput) -> TokenStream {
+    let data = input.data.as_ref();
+    let struct_data = data.take_struct();
+    let elements = struct_data
+        .iter()
+        .flat_map(|i| i.fields.iter().copied().enumerate())
+        .filter_map(|(index, field)| implement_format_single_value(index, field))
+        .collect::<Vec<_>>();
+
+    if elements.is_empty() {
+        quote! { String::new() }
+    } else {
+        let else_keyword = quote! { else };
+        let elements =
+            Itertools::intersperse(elements.into_iter(), else_keyword).collect::<Vec<_>>();
+
+        quote! {
+            #(#elements)*
+            else {
+                String::new()
+            }
+        }
+    }
+}
+
+fn implement_format_single_value(index: usize, field: &FormatterField) -> Option<TokenStream> {
+    match (&field.inline, &field.header, &field.mode) {
+        (true, None, None) => {
+            let ty = &field.ty;
+            let access = format_access(index, field);
+            let value = quote! {
+                 if #ty::headers().contains(header) {
                     #access.format_value(header)
                 }
-            }
+            };
+            Some(value)
         }
+        (false, Some(header), _) => {
+            let access = format_access(index, field);
+            let value = quote! {
+                if *header == #header {
+                    shellui::format::FormatField::format_field(&#access)
+                }
+            };
+            Some(value)
+        }
+        _ => None,
     }
 }
 
-fn format_access(index: usize, field: &Field) -> impl ToTokens {
+fn format_access(index: usize, field: &FormatterField) -> TokenStream {
     if let Some(ident) = &field.ident {
         let ident = ident.clone();
         quote! {
             self.#ident
         }
     } else {
+        let index = Index {
+            index: index as u32,
+            span: Span::call_site(),
+        };
         quote! {
             self.#index
         }
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-enum Header {
-    Mapping(String),
-    InlineMapping,
-}
-
-fn parse_attribute(attribute: Attribute) -> Option<Result<Header, Attribute>> {
-    if attribute.path().is_ident("header") {
-        let content = attribute.parse_args::<Expr>().ok();
-        match content {
-            Some(Expr::Lit(lit)) => match lit.lit {
-                Lit::Str(value) => Some(Ok(Header::Mapping(value.value()))),
-                _ => Some(Err(attribute)),
-            },
-            Some(Expr::Path(path)) => {
-                if path.path.is_ident("inline") {
-                    Some(Ok(Header::InlineMapping))
-                } else {
-                    Some(Err(attribute))
-                }
-            }
-            _ => Some(Err(attribute)),
-        }
-    } else {
-        None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use syn::{parse2, Variant};
-
-    #[test]
-    fn test_attr() {
-        let attr = quote! {
-            #[header("test")]
-            Test
-        };
-
-        let input: Variant = parse2(attr).unwrap();
-        let values = parse_attribute(input.attrs.get(0).cloned().unwrap())
-            .unwrap()
-            .unwrap();
-        let expected = Header::Mapping("test".to_string());
-        assert_eq!(values, expected);
-    }
-
-    #[test]
-    fn test_attr_inline() {
-        let attr = quote! {
-            #[header(inline)]
-            Test
-        };
-
-        let input: Variant = parse2(attr).unwrap();
-        let values = parse_attribute(input.attrs.get(0).cloned().unwrap())
-            .unwrap()
-            .unwrap();
-        let expected = Header::InlineMapping;
-        assert_eq!(values, expected);
     }
 }
