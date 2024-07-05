@@ -61,7 +61,7 @@ fn test_derive() {
         "Host".to_string(),
         "Port".to_string(),
     ];
-    assert_eq!(Simple::headers(), headers);
+    assert_eq!(Simple::default_headers(), headers);
     let headers_with_mode = vec![
         "Id".to_string(),
         "Label".to_string(),
@@ -77,19 +77,22 @@ fn test_derive() {
         Coordinates::new("http://localhost".to_string(), 8888),
         123,
     );
-    assert_eq!(value.format_value(&"Id"), "id".to_string());
-    assert_eq!(value.format_value(&"Label"), "label".to_string());
-    assert_eq!(value.format_value(&"Host"), "http://localhost".to_string());
-    assert_eq!(value.format_value(&"Port"), "8888".to_string());
-    assert_eq!(value.format_value(&"Value"), "123".to_string());
+    assert_eq!(value.format_value(None, &"Id"), "id".to_string());
+    assert_eq!(value.format_value(None, &"Label"), "label".to_string());
+    assert_eq!(
+        value.format_value(None, &"Host"),
+        "http://localhost".to_string()
+    );
+    assert_eq!(value.format_value(None, &"Port"), "8888".to_string());
+    assert_eq!(value.format_value(None, &"Value"), "123".to_string());
 }
 
 #[test]
 fn test_derive_tuple() {
     let headers = vec!["Id".to_string(), "Label".to_string()];
-    assert_eq!(Tuple::headers(), headers);
+    assert_eq!(Tuple::default_headers(), headers);
 
     let value = Tuple("id".to_string(), "label".to_string());
-    assert_eq!(value.format_value(&"Id"), "id".to_string());
-    assert_eq!(value.format_value(&"Label"), "label".to_string());
+    assert_eq!(value.format_value(None, &"Id"), "id".to_string());
+    assert_eq!(value.format_value(None, &"Label"), "label".to_string());
 }

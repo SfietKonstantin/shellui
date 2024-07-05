@@ -9,11 +9,16 @@ use std::iter;
 
 pub trait ObjectFormatter {
     type Header: 'static + Clone + AsRef<str>;
-    fn headers() -> Vec<Self::Header>;
-    fn headers_with_mode(_mode: &str) -> Vec<Self::Header> {
-        Self::headers()
+    type Mode: 'static + Clone;
+
+    fn headers(mode: Option<Self::Mode>) -> Vec<Self::Header>;
+    fn default_headers() -> Vec<Self::Header> {
+        Self::headers(None)
     }
-    fn format_value(&self, header: &Self::Header) -> String;
+    fn headers_with_mode(mode: Self::Mode) -> Vec<Self::Header> {
+        Self::headers(Some(mode))
+    }
+    fn format_value(&self, mode: Option<Self::Mode>, header: &Self::Header) -> String;
 }
 
 pub trait FormatField {
@@ -58,109 +63,62 @@ where
     }
 }
 
-fn format_list<T>(elements: &[T], headers: &[T::Header]) -> Vec<String>
-where
-    T: ObjectFormatter,
-{
-    let values = elements
-        .iter()
-        .map(|e| extract_line(e, headers))
-        .collect::<Vec<_>>();
-
-    let column_count = compute_column_count(headers, &values);
-    let headers = column_count
-        .iter()
-        .zip(headers.iter())
-        .map(|(size, k)| {
-            let header = format!("{:<1$}", k.as_ref(), size);
-            header.white().bold().to_string()
-        })
-        .collect::<Vec<_>>();
-    let headers = headers.join(" ");
-
-    iter::once(headers)
-        .chain(values.into_iter().map(|line| {
-            let line = column_count
-                .iter()
-                .zip(line)
-                .map(|(size, v)| {
-                    let value = format!("{:<1$}", v, size);
-                    value.white().to_string()
-                })
-                .collect::<Vec<_>>();
-            line.join(" ")
-        }))
-        .collect()
-}
-
-pub fn print_list<T>(elements: &[T])
-where
-    T: ObjectFormatter,
-{
-    let headers = T::headers();
-    for line in format_list(elements, &headers) {
-        println!("{line}")
+pub trait PrintTable {
+    type Item: ObjectFormatter;
+    fn format_table(&self, mode: Option<<Self::Item as ObjectFormatter>::Mode>) -> Vec<String>;
+    fn print_table(&self, mode: Option<<Self::Item as ObjectFormatter>::Mode>);
+    fn print_table_default(&self) {
+        self.print_table(None)
+    }
+    fn print_table_with_mode(&self, mode: <Self::Item as ObjectFormatter>::Mode) {
+        self.print_table(Some(mode))
     }
 }
 
-pub fn print_list_with_mode<T>(elements: &[T], mode: &str)
+impl<T> PrintTable for Vec<T>
 where
     T: ObjectFormatter,
 {
-    let headers = T::headers_with_mode(mode);
-    for line in format_list(elements, &headers) {
-        println!("{line}")
+    type Item = T;
+
+    fn format_table(&self, mode: Option<T::Mode>) -> Vec<String> {
+        let headers = T::headers(mode.clone());
+        let values = self
+            .iter()
+            .map(|e| extract_line(e, mode.clone(), &headers))
+            .collect::<Vec<_>>();
+
+        let column_count = compute_column_count(&headers, &values);
+        let headers = column_count
+            .iter()
+            .zip(headers.iter())
+            .map(|(size, k)| {
+                let header = format!("{:<1$}", k.as_ref(), size);
+                header.white().bold().to_string()
+            })
+            .collect::<Vec<_>>();
+        let headers = headers.join(" ");
+
+        iter::once(headers)
+            .chain(values.into_iter().map(|line| {
+                let line = column_count
+                    .iter()
+                    .zip(line)
+                    .map(|(size, v)| {
+                        let value = format!("{:<1$}", v, size);
+                        value.white().to_string()
+                    })
+                    .collect::<Vec<_>>();
+                line.join(" ")
+            }))
+            .collect()
     }
-}
 
-fn format_single<T>(element: &T, headers: &[T::Header]) -> Vec<String>
-where
-    T: ObjectFormatter,
-{
-    let size = headers
-        .iter()
-        .map(AsRef::as_ref)
-        .map(str::len)
-        .max()
-        .unwrap_or_default();
-    headers
-        .iter()
-        .map(|k| {
-            let header = k.as_ref().white().bold();
-            let header = format!("{:<1$}", header, size);
-            let value = element.format_value(k);
-            format!("{header} {value}")
-        })
-        .collect()
-}
-
-pub fn print_single<T>(element: &T)
-where
-    T: ObjectFormatter,
-{
-    let headers = T::headers();
-    for line in format_single(element, &headers) {
-        println!("{line}")
+    fn print_table(&self, mode: Option<T::Mode>) {
+        for line in self.format_table(mode) {
+            println!("{line}")
+        }
     }
-}
-
-pub fn print_single_with_mode<T>(element: &T, mode: &str)
-where
-    T: ObjectFormatter,
-{
-    let headers = T::headers_with_mode(mode);
-    for line in format_single(element, &headers) {
-        println!("{line}")
-    }
-}
-
-pub fn print_json<T>(element: &T) -> Result<()>
-where
-    T: Serialize,
-{
-    let formatted = to_colored_json_auto(element).with_context("Failed to format to JSON")?;
-    println!("{formatted}");
-    Ok(())
 }
 
 fn compute_column_count<K>(headers: &[K], values: &[Vec<String>]) -> Vec<usize>
@@ -180,17 +138,79 @@ where
         .chain(value_sizes)
         .fold(zeroes, |prev, current| {
             prev.into_iter()
-                .zip(current)
-                .map(|(x, y)| max(x, y))
+                .zip(current.iter())
+                .map(|(x, y)| max(x, *y))
                 .collect()
         })
 }
 
-fn extract_line<T>(element: &T, headers: &[T::Header]) -> Vec<String>
+fn extract_line<T>(element: &T, mode: Option<T::Mode>, headers: &[T::Header]) -> Vec<String>
 where
     T: ObjectFormatter,
 {
-    headers.iter().map(|k| element.format_value(k)).collect()
+    headers
+        .iter()
+        .map(|k| element.format_value(mode.clone(), k))
+        .collect()
+}
+
+pub trait PrintSingle {
+    type Item: ObjectFormatter;
+    fn format_single(&self, mode: Option<<Self::Item as ObjectFormatter>::Mode>) -> Vec<String>;
+    fn print_single(&self, mode: Option<<Self::Item as ObjectFormatter>::Mode>);
+    fn print_single_default(&self) {
+        self.print_single(None)
+    }
+    fn print_single_with_mode(&self, mode: <Self::Item as ObjectFormatter>::Mode) {
+        self.print_single(Some(mode))
+    }
+}
+
+impl<T> PrintSingle for T
+where
+    T: ObjectFormatter,
+{
+    type Item = T;
+
+    fn format_single(&self, mode: Option<T::Mode>) -> Vec<String> {
+        let headers = Self::headers(mode.clone());
+        let size = headers
+            .iter()
+            .map(AsRef::as_ref)
+            .map(str::len)
+            .max()
+            .unwrap_or_default();
+        headers
+            .iter()
+            .map(|k| {
+                let header = k.as_ref().white().bold();
+                let header = format!("{:<1$}", header, size);
+                let value = self.format_value(mode.clone(), k);
+                format!("{header} {value}")
+            })
+            .collect()
+    }
+
+    fn print_single(&self, mode: Option<<Self::Item as ObjectFormatter>::Mode>) {
+        for line in self.format_single(mode) {
+            println!("{line}")
+        }
+    }
+}
+
+pub trait PrintJson {
+    fn print_json(&self) -> Result<()>;
+}
+
+impl<T> PrintJson for T
+where
+    T: Serialize,
+{
+    fn print_json(&self) -> Result<()> {
+        let formatted = to_colored_json_auto(self).with_context("Failed to format to JSON")?;
+        println!("{formatted}");
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -202,12 +222,13 @@ mod tests {
 
     impl ObjectFormatter for TestValue {
         type Header = &'static str;
+        type Mode = ();
 
-        fn headers() -> Vec<Self::Header> {
+        fn headers(_mode: Option<()>) -> Vec<Self::Header> {
             vec!["id", "label", "a very long header"]
         }
 
-        fn format_value(&self, header: &Self::Header) -> String {
+        fn format_value(&self, _mode: Option<()>, header: &Self::Header) -> String {
             match *header {
                 "id" => self.0.to_string(),
                 "label" => self.1.to_string(),
@@ -225,7 +246,7 @@ mod tests {
             TestValue("1", "label 1", "value"),
             TestValue("a very long id", "l2", "value2"),
         ];
-        let table = format_list(&elements, &TestValue::headers());
+        let table = elements.format_table(None);
         let expected = vec![
             "id             label   a very long header",
             "1              label 1 value             ",
@@ -238,7 +259,7 @@ mod tests {
     fn test_format_single() {
         env::set_var("NO_COLOR", "1");
 
-        let table = format_single(&TestValue("1", "label 1", "value"), &TestValue::headers());
+        let table = TestValue("1", "label 1", "value").format_single(None);
         let expected = vec![
             "id                 1",
             "label              label 1",

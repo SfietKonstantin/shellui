@@ -14,8 +14,8 @@ pub fn display_cli(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = FormatterInput::from_derive_input(&raw);
     let expanded = match input {
         Ok(input) => {
-            let headers = implement_headers(&input, implement_header);
-            let headers_with_mode = implement_headers(&input, implement_header_with_mode);
+            let headers = implement_headers(&input);
+            //let headers_with_mode = implement_headers(&input, implement_header_with_mode);
             let format_value = implement_format_value(&input);
 
             let name = input.ident;
@@ -25,16 +25,13 @@ pub fn display_cli(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
             quote! {
                 impl <#(#type_params,)*> shellui::format::ObjectFormatter for #name #ty_generics #where_clause {
                     type Header = &'static str;
+                    type Mode = &'static str;
 
-                    fn headers() -> Vec<Self::Header> {
+                    fn headers(mode: Option<Self::Mode>) -> Vec<Self::Header> {
                         #headers
                     }
 
-                    fn headers_with_mode(mode: &str) -> Vec<Self::Header> {
-                        #headers_with_mode
-                    }
-
-                    fn format_value(&self, header: &Self::Header) -> String {
+                    fn format_value(&self, mode: Option<Self::Mode>, header: &Self::Header) -> String {
                         #format_value
                     }
                 }
@@ -71,10 +68,7 @@ struct FormatterField {
     mode: Option<String>,
 }
 
-fn implement_headers<F>(input: &FormatterInput, implement_header: F) -> TokenStream
-where
-    F: Fn(&FormatterField) -> TokenStream,
-{
+fn implement_headers(input: &FormatterInput) -> TokenStream {
     let data = input.data.as_ref();
     let struct_data = data.take_struct();
     let headers = struct_data
@@ -93,31 +87,7 @@ fn implement_header(field: &FormatterField) -> TokenStream {
         (true, None, None) => {
             let ty = &field.ty;
             quote! {
-                for header in #ty::headers() {
-                    headers.push(header);
-                }
-            }
-        }
-        (false, Some(header), None) => {
-            quote! {
-                headers.push(#header);
-            }
-        }
-        (false, None, None) | (false, Some(_), Some(_)) => {
-            quote! {}
-        }
-        _ => {
-            quote_spanned! { field.ident.span() => compile_error!("Invalid object_formatter attribute"); }
-        }
-    }
-}
-
-fn implement_header_with_mode(field: &FormatterField) -> TokenStream {
-    match (&field.inline, &field.header, &field.mode) {
-        (true, None, None) => {
-            let ty = &field.ty;
-            quote! {
-                for header in #ty::headers() {
+                for header in #ty::headers(mode.clone()) {
                     headers.push(header);
                 }
             }
@@ -129,7 +99,7 @@ fn implement_header_with_mode(field: &FormatterField) -> TokenStream {
         }
         (false, Some(header), Some(mode)) => {
             quote! {
-                if mode == #mode {
+                if mode == Some(#mode) {
                     headers.push(#header);
                 }
             }
@@ -174,8 +144,8 @@ fn implement_format_single_value(index: usize, field: &FormatterField) -> Option
             let ty = &field.ty;
             let access = format_access(index, field);
             let value = quote! {
-                 if #ty::headers().contains(header) {
-                    #access.format_value(header)
+                 if #ty::headers(mode.clone()).contains(header) {
+                    #access.format_value(mode.clone(), header)
                 }
             };
             Some(value)
