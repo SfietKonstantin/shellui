@@ -1,7 +1,7 @@
 mod ui;
 
 use self::ui::ShellUi;
-use crate::errors::DisplayCli;
+use crate::format::AsFormatted;
 use crate::{Context, ShellParser};
 use clap::{CommandFactory, Parser, Subcommand};
 use rustyline::error::ReadlineError;
@@ -71,7 +71,7 @@ where
                 Err(error) => match error.kind() {
                     ErrorKind::Interrupted => Ok(ShellAction::None),
                     _ => {
-                        error.display_cli();
+                        error.print_formatted();
                         Ok(ShellAction::None)
                     }
                 },

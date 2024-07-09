@@ -4,45 +4,164 @@ use colored_json::to_colored_json_auto;
 use serde::Serialize;
 pub use shellui_derive::ObjectFormatter;
 use std::cmp::max;
-use std::io::Result;
+use std::error::Error as StdError;
+use std::io::{Error, Result};
 use std::iter;
 
-pub trait ObjectFormatter {
-    type Header: 'static + Clone + AsRef<str>;
-    type Mode: 'static + Clone;
-
-    fn headers(mode: Option<Self::Mode>) -> Vec<Self::Header>;
-    fn default_headers() -> Vec<Self::Header> {
-        Self::headers(None)
+pub trait AsFormatted {
+    fn unformatted_len(&self) -> usize {
+        self.as_unformatted().len()
     }
-    fn headers_with_mode(mode: Self::Mode) -> Vec<Self::Header> {
-        Self::headers(Some(mode))
+    fn as_unformatted(&self) -> String;
+    fn as_formatted(&self) -> String {
+        self.as_unformatted()
     }
-    fn format_value(&self, mode: Option<Self::Mode>, header: &Self::Header) -> String;
+    fn print_formatted(&self) {
+        eprintln!("{}", self.as_formatted());
+    }
 }
 
-pub trait FormatField {
-    fn format_field(&self) -> String;
+#[derive(Debug, Default, Eq, PartialEq)]
+enum MessageKind {
+    #[default]
+    Default,
+    Info,
+    Success,
+    Warning,
+    Error,
+    Hint,
 }
-macro_rules! impl_format_field {
+
+#[derive(Debug, Default, Eq, PartialEq)]
+pub struct Message {
+    kind: MessageKind,
+    message: String,
+}
+
+impl Message {
+    pub fn new<T>(value: T) -> Self
+    where
+        T: AsFormatted,
+    {
+        Message {
+            kind: MessageKind::Default,
+            message: value.as_unformatted(),
+        }
+    }
+
+    pub fn info<T>(value: T) -> Self
+    where
+        T: AsFormatted,
+    {
+        Message {
+            kind: MessageKind::Info,
+            message: value.as_unformatted(),
+        }
+    }
+
+    pub fn success<T>(value: T) -> Self
+    where
+        T: AsFormatted,
+    {
+        Message {
+            kind: MessageKind::Success,
+            message: value.as_unformatted(),
+        }
+    }
+
+    pub fn warning<T>(value: T) -> Self
+    where
+        T: AsFormatted,
+    {
+        Message {
+            kind: MessageKind::Warning,
+            message: value.as_unformatted(),
+        }
+    }
+
+    pub fn error<T>(value: T) -> Self
+    where
+        T: AsFormatted,
+    {
+        Message {
+            kind: MessageKind::Error,
+            message: value.as_unformatted(),
+        }
+    }
+
+    pub fn hint<T>(value: T) -> Self
+    where
+        T: AsFormatted,
+    {
+        Message {
+            kind: MessageKind::Hint,
+            message: value.as_unformatted(),
+        }
+    }
+}
+
+impl AsFormatted for Message {
+    fn unformatted_len(&self) -> usize {
+        self.message.len()
+    }
+
+    fn as_unformatted(&self) -> String {
+        self.message.clone()
+    }
+
+    fn as_formatted(&self) -> String {
+        match &self.kind {
+            MessageKind::Default => self.message.clone(),
+            MessageKind::Info => self.message.bright_cyan().to_string(),
+            MessageKind::Success => self.message.bright_green().to_string(),
+            MessageKind::Warning => self.message.bright_yellow().to_string(),
+            MessageKind::Error => self.message.bright_red().to_string(),
+            MessageKind::Hint => self.message.white().dimmed().to_string(),
+        }
+    }
+}
+
+macro_rules! impl_as_formatted {
     ($ty:ty) => {
-        impl FormatField for $ty {
-            fn format_field(&self) -> String {
+        impl AsFormatted for $ty {
+            fn as_unformatted(&self) -> String {
                 self.to_string()
             }
         }
     };
 }
 
-impl_format_field!(i32);
-impl_format_field!(i64);
-impl_format_field!(u32);
-impl_format_field!(u64);
-impl_format_field!(String);
-impl_format_field!(&str);
+impl_as_formatted!(i32);
+impl_as_formatted!(i64);
+impl_as_formatted!(u32);
+impl_as_formatted!(u64);
 
-impl FormatField for bool {
-    fn format_field(&self) -> String {
+macro_rules! impl_as_formatted_str {
+    ($ty:ty) => {
+        impl AsFormatted for $ty {
+            fn unformatted_len(&self) -> usize {
+                self.len()
+            }
+            fn as_unformatted(&self) -> String {
+                self.to_string()
+            }
+        }
+    };
+}
+
+impl_as_formatted_str!(String);
+impl_as_formatted_str!(&str);
+
+impl AsFormatted for bool {
+    fn unformatted_len(&self) -> usize {
+        if *self {
+            1
+        } else {
+            0
+        }
+    }
+
+    fn as_unformatted(&self) -> String {
         if *self {
             "*".to_string()
         } else {
@@ -51,16 +170,101 @@ impl FormatField for bool {
     }
 }
 
-impl<T> FormatField for Option<T>
+impl<T> AsFormatted for Option<T>
 where
-    T: FormatField,
+    T: AsFormatted,
 {
-    fn format_field(&self) -> String {
+    fn as_unformatted(&self) -> String {
         match self {
-            Some(value) => value.format_field(),
+            Some(value) => value.as_unformatted(),
             None => String::new(),
         }
     }
+}
+
+impl AsFormatted for Error {
+    fn as_unformatted(&self) -> String {
+        self.to_string()
+    }
+
+    fn as_formatted(&self) -> String {
+        let message = Message::error(format!("Error: {}", self)).as_formatted();
+
+        let source = self.source();
+        if let Some(source) = source {
+            let errors = ErrorIterator::new(Some(source))
+                .enumerate()
+                .map(|(i, error)| Message::hint(format!("  ({}) {error}", i + 1)).as_formatted());
+
+            let errors = iter::once(message)
+                .chain(iter::once(Message::hint("Caused by:").as_formatted()))
+                .chain(errors)
+                .collect::<Vec<_>>();
+            errors.join("\n")
+        } else {
+            message
+        }
+    }
+}
+
+struct ErrorIterator<'a> {
+    error: Option<&'a (dyn StdError + 'static)>,
+}
+
+impl<'a> ErrorIterator<'a> {
+    fn new(error: Option<&'a (dyn StdError + 'static)>) -> Self {
+        ErrorIterator { error }
+    }
+}
+
+impl<'a> Iterator for ErrorIterator<'a> {
+    type Item = &'a (dyn StdError + 'static);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(current) = self.error {
+            let value = self.error;
+            self.error = current.source();
+            value
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, T> AsFormatted for &'a T
+where
+    T: AsFormatted,
+{
+    fn unformatted_len(&self) -> usize {
+        AsFormatted::unformatted_len(*self)
+    }
+
+    fn as_unformatted(&self) -> String {
+        AsFormatted::as_unformatted(*self)
+    }
+
+    fn as_formatted(&self) -> String {
+        AsFormatted::as_formatted(*self)
+    }
+
+    fn print_formatted(&self) {
+        AsFormatted::print_formatted(*self)
+    }
+}
+
+pub trait ObjectFormatter {
+    type Header: 'static + Clone + AsRef<str>;
+    type Mode: 'static + Clone;
+    type Output: AsFormatted;
+
+    fn headers(mode: Option<Self::Mode>) -> Vec<Self::Header>;
+    fn default_headers() -> Vec<Self::Header> {
+        Self::headers(None)
+    }
+    fn headers_with_mode(mode: Self::Mode) -> Vec<Self::Header> {
+        Self::headers(Some(mode))
+    }
+    fn format_value(&self, mode: Option<Self::Mode>, header: &Self::Header) -> Self::Output;
 }
 
 pub trait PrintTable {
@@ -88,7 +292,7 @@ where
             .map(|e| extract_line(e, mode.clone(), &headers))
             .collect::<Vec<_>>();
 
-        let column_count = compute_column_count(&headers, &values);
+        let column_count = compute_column_count::<T>(&headers, &values);
         let headers = column_count
             .iter()
             .zip(headers.iter())
@@ -105,8 +309,9 @@ where
                     .iter()
                     .zip(line)
                     .map(|(size, v)| {
-                        let value = format!("{:<1$}", v, size);
-                        value.white().to_string()
+                        let formatted = v.as_formatted();
+                        let spacing = size - v.unformatted_len() + formatted.len();
+                        format!("{:<1$}", formatted, spacing)
                     })
                     .collect::<Vec<_>>();
                 line.join(" ")
@@ -121,9 +326,9 @@ where
     }
 }
 
-fn compute_column_count<K>(headers: &[K], values: &[Vec<String>]) -> Vec<usize>
+fn compute_column_count<T>(headers: &[T::Header], values: &[Vec<T::Output>]) -> Vec<usize>
 where
-    K: AsRef<str>,
+    T: ObjectFormatter,
 {
     let zeroes = headers.iter().map(|_| 0).collect::<Vec<_>>();
     let header_sizes = headers
@@ -133,7 +338,7 @@ where
         .collect::<Vec<_>>();
     let value_sizes = values
         .iter()
-        .map(|line| line.iter().map(|v| v.len()).collect());
+        .map(|line| line.iter().map(|v| v.unformatted_len()).collect());
     iter::once(header_sizes)
         .chain(value_sizes)
         .fold(zeroes, |prev, current| {
@@ -144,7 +349,7 @@ where
         })
 }
 
-fn extract_line<T>(element: &T, mode: Option<T::Mode>, headers: &[T::Header]) -> Vec<String>
+fn extract_line<T>(element: &T, mode: Option<T::Mode>, headers: &[T::Header]) -> Vec<T::Output>
 where
     T: ObjectFormatter,
 {
@@ -186,7 +391,7 @@ where
                 let header = k.as_ref().white().bold();
                 let header = format!("{:<1$}", header, size);
                 let value = self.format_value(mode.clone(), k);
-                format!("{header} {value}")
+                format!("{header} {}", value.as_formatted())
             })
             .collect()
     }
@@ -223,6 +428,7 @@ mod tests {
     impl ObjectFormatter for TestValue {
         type Header = &'static str;
         type Mode = ();
+        type Output = String;
 
         fn headers(_mode: Option<()>) -> Vec<Self::Header> {
             vec!["id", "label", "a very long header"]
@@ -266,5 +472,31 @@ mod tests {
             "a very long header value",
         ];
         assert_eq!(table, expected);
+    }
+
+    #[test]
+    fn test_format_errors() {
+        env::set_var("NO_COLOR", "1");
+
+        {
+            let result: Result<()> = Err(Error::other("Test"));
+            let error = result.unwrap_err().as_formatted();
+            assert_eq!(error, "Error: Test")
+        }
+        {
+            let result: Result<()> = Err(Error::other("Test")).with_context("Failure");
+            let error = result.unwrap_err().as_formatted();
+            assert_eq!(error, "Error: Failure\nCaused by:\n  (1) Test")
+        }
+        {
+            let result: Result<()> = Err(Error::other("Error 2"))
+                .with_context("Error 1")
+                .with_context("Failure");
+            let error = result.unwrap_err().as_formatted();
+            assert_eq!(
+                error,
+                "Error: Failure\nCaused by:\n  (1) Error 1\n  (2) Error 2"
+            )
+        }
     }
 }

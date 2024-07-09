@@ -4,7 +4,7 @@ use darling::util::Ignored;
 use darling::{FromDeriveInput, FromField};
 use itertools::Itertools;
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, DeriveInput, Generics, Ident, Index, Type};
 
@@ -26,12 +26,13 @@ pub fn display_cli(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
                 impl <#(#type_params,)*> shellui::format::ObjectFormatter for #name #ty_generics #where_clause {
                     type Header = &'static str;
                     type Mode = &'static str;
+                    type Output = shellui::format::Message;
 
                     fn headers(mode: Option<Self::Mode>) -> Vec<Self::Header> {
                         #headers
                     }
 
-                    fn format_value(&self, mode: Option<Self::Mode>, header: &Self::Header) -> String {
+                    fn format_value(&self, mode: Option<Self::Mode>, header: &Self::Header) -> Self::Output {
                         #format_value
                     }
                 }
@@ -66,6 +67,10 @@ struct FormatterField {
     header: Option<String>,
     #[darling(default)]
     mode: Option<String>,
+    #[darling(default)]
+    level: Option<String>,
+    #[darling(default)]
+    with: Option<String>,
 }
 
 fn implement_headers(input: &FormatterInput) -> TokenStream {
@@ -123,7 +128,7 @@ fn implement_format_value(input: &FormatterInput) -> TokenStream {
         .collect::<Vec<_>>();
 
     if elements.is_empty() {
-        quote! { String::new() }
+        quote! { shellui::format::Message::default() }
     } else {
         let else_keyword = quote! { else };
         let elements =
@@ -132,7 +137,7 @@ fn implement_format_value(input: &FormatterInput) -> TokenStream {
         quote! {
             #(#elements)*
             else {
-                String::new()
+                shellui::format::Message::default()
             }
         }
     }
@@ -151,13 +156,29 @@ fn implement_format_single_value(index: usize, field: &FormatterField) -> Option
             Some(value)
         }
         (false, Some(header), _) => {
+            let with = field.with.as_ref();
             let access = format_access(index, field);
-            let value = quote! {
-                if *header == #header {
-                    shellui::format::FormatField::format_field(&#access)
-                }
-            };
-            Some(value)
+
+            if let Some(with) = with {
+                let with = format_ident!("{with}");
+                let value = quote! {
+                    if *header == #header {
+                        #with(&#access)
+
+                    }
+                };
+                Some(value)
+            } else {
+                let constructor = field.level.as_deref().unwrap_or("new");
+                let constructor = format_ident!("{constructor}");
+                let value = quote! {
+                    if *header == #header {
+                        shellui::format::Message::#constructor(&#access)
+
+                    }
+                };
+                Some(value)
+            }
         }
         _ => None,
     }

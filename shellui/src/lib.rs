@@ -3,7 +3,7 @@ pub mod format;
 pub mod input;
 mod shell;
 
-use crate::errors::DisplayCli;
+use crate::format::AsFormatted;
 use clap::{Parser, Subcommand};
 use std::io::{ErrorKind, Result};
 use std::path::PathBuf;
@@ -47,7 +47,7 @@ where
     T: ShellParser,
 {
     if let Err(error) = handle_launch::<T>() {
-        error.display_cli();
+        error.print_formatted();
         exit(1);
     }
 }

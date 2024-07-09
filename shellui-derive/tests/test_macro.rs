@@ -1,4 +1,4 @@
-use shellui::format::ObjectFormatter;
+use shellui::format::{Message, ObjectFormatter};
 
 #[derive(ObjectFormatter)]
 struct Simple {
@@ -25,11 +25,19 @@ impl Simple {
     }
 }
 
+fn format_port(port: &u32) -> Message {
+    if *port < 1000 {
+        Message::success(port)
+    } else {
+        Message::error(port)
+    }
+}
+
 #[derive(ObjectFormatter)]
 struct Coordinates {
-    #[object_formatter(header = "Host")]
+    #[object_formatter(header = "Host", level = "success")]
     host: String,
-    #[object_formatter(header = "Port")]
+    #[object_formatter(header = "Port", with = "format_port")]
     port: u32,
 }
 impl Coordinates {
@@ -77,14 +85,14 @@ fn test_derive() {
         Coordinates::new("http://localhost".to_string(), 8888),
         123,
     );
-    assert_eq!(value.format_value(None, &"Id"), "id".to_string());
-    assert_eq!(value.format_value(None, &"Label"), "label".to_string());
+    assert_eq!(value.format_value(None, &"Id"), Message::new("id"));
+    assert_eq!(value.format_value(None, &"Label"), Message::new("label"));
     assert_eq!(
         value.format_value(None, &"Host"),
-        "http://localhost".to_string()
+        Message::success("http://localhost")
     );
-    assert_eq!(value.format_value(None, &"Port"), "8888".to_string());
-    assert_eq!(value.format_value(None, &"Value"), "123".to_string());
+    assert_eq!(value.format_value(None, &"Port"), Message::error("8888"));
+    assert_eq!(value.format_value(None, &"Value"), Message::new("123"));
 }
 
 #[test]
@@ -93,6 +101,6 @@ fn test_derive_tuple() {
     assert_eq!(Tuple::default_headers(), headers);
 
     let value = Tuple("id".to_string(), "label".to_string());
-    assert_eq!(value.format_value(None, &"Id"), "id".to_string());
-    assert_eq!(value.format_value(None, &"Label"), "label".to_string());
+    assert_eq!(value.format_value(None, &"Id"), Message::new("id"));
+    assert_eq!(value.format_value(None, &"Label"), Message::new("label"));
 }
