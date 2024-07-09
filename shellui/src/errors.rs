@@ -1,6 +1,41 @@
 use std::error::Error as StdError;
 use std::fmt;
-use std::io::Error;
+use std::io::{Error, ErrorKind};
+use thiserror::Error;
+
+pub type ShellUiResult<T> = Result<T, ShellUiError>;
+
+#[derive(Debug, Error)]
+pub enum ShellUiError {
+    #[error(transparent)]
+    Error(Error),
+    #[error("{}", .0)]
+    Warning(String),
+    #[error("Interrupt")]
+    Interrupt,
+}
+
+impl From<Error> for ShellUiError {
+    fn from(error: Error) -> Self {
+        match error.kind() {
+            ErrorKind::Interrupted => ShellUiError::Interrupt,
+            _ => ShellUiError::Error(error),
+        }
+    }
+}
+
+impl ShellUiError {
+    pub fn warning<S>(message: S) -> Self
+    where
+        S: ToString,
+    {
+        ShellUiError::Warning(message.to_string())
+    }
+
+    pub fn interrupt() -> Self {
+        ShellUiError::Interrupt
+    }
+}
 
 pub trait WithContext {
     type Output;

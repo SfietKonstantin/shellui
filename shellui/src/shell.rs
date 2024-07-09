@@ -1,13 +1,14 @@
 mod ui;
 
 use self::ui::ShellUi;
+use crate::errors::ShellUiError;
 use crate::format::AsFormatted;
 use crate::{Context, ShellParser};
 use clap::{CommandFactory, Parser, Subcommand};
 use rustyline::error::ReadlineError;
 use rustyline::history::FileHistory;
 use rustyline::{CompletionType, Config, Editor};
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, Result};
 use std::iter;
 
 #[derive(Parser)]
@@ -68,8 +69,8 @@ where
         match self {
             ShellCommand::Common(command) => match T::run_command(context, command) {
                 Ok(()) => Ok(ShellAction::None),
-                Err(error) => match error.kind() {
-                    ErrorKind::Interrupted => Ok(ShellAction::None),
+                Err(error) => match error {
+                    ShellUiError::Interrupt => Ok(ShellAction::None),
                     _ => {
                         error.print_formatted();
                         Ok(ShellAction::None)

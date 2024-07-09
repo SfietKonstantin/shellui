@@ -1,4 +1,4 @@
-use crate::errors::WithContext;
+use crate::errors::{ShellUiError, WithContext};
 use colored::Colorize;
 use colored_json::to_colored_json_auto;
 use serde::Serialize;
@@ -188,7 +188,7 @@ impl AsFormatted for Error {
     }
 
     fn as_formatted(&self) -> String {
-        let message = Message::error(format!("Error: {}", self)).as_formatted();
+        let message = Message::error(self.to_string()).as_formatted();
 
         let source = self.source();
         if let Some(source) = source {
@@ -227,6 +227,20 @@ impl<'a> Iterator for ErrorIterator<'a> {
             value
         } else {
             None
+        }
+    }
+}
+
+impl AsFormatted for ShellUiError {
+    fn as_unformatted(&self) -> String {
+        self.to_string()
+    }
+
+    fn as_formatted(&self) -> String {
+        match self {
+            ShellUiError::Error(error) => error.as_formatted(),
+            ShellUiError::Warning(warning) => Message::warning(warning).as_formatted(),
+            ShellUiError::Interrupt => String::new(),
         }
     }
 }
@@ -481,22 +495,19 @@ mod tests {
         {
             let result: Result<()> = Err(Error::other("Test"));
             let error = result.unwrap_err().as_formatted();
-            assert_eq!(error, "Error: Test")
+            assert_eq!(error, "Test")
         }
         {
             let result: Result<()> = Err(Error::other("Test")).with_context("Failure");
             let error = result.unwrap_err().as_formatted();
-            assert_eq!(error, "Error: Failure\nCaused by:\n  (1) Test")
+            assert_eq!(error, "Failure\nCaused by:\n  (1) Test")
         }
         {
             let result: Result<()> = Err(Error::other("Error 2"))
                 .with_context("Error 1")
                 .with_context("Failure");
             let error = result.unwrap_err().as_formatted();
-            assert_eq!(
-                error,
-                "Error: Failure\nCaused by:\n  (1) Error 1\n  (2) Error 2"
-            )
+            assert_eq!(error, "Failure\nCaused by:\n  (1) Error 1\n  (2) Error 2")
         }
     }
 }

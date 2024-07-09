@@ -3,9 +3,10 @@ pub mod format;
 pub mod input;
 mod shell;
 
+use crate::errors::{ShellUiError, ShellUiResult};
 use crate::format::AsFormatted;
 use clap::{Parser, Subcommand};
-use std::io::{ErrorKind, Result};
+use std::io::Result;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -35,7 +36,7 @@ pub trait ShellParser: Parser {
     /// so that it can go into shell mode if the subcommand is not passed.
     fn try_get_command(self) -> Option<Self::Commands>;
     /// Run a command
-    fn run_command(context: &mut Self::Context, command: &Self::Commands) -> Result<()>;
+    fn run_command(context: &mut Self::Context, command: &Self::Commands) -> ShellUiResult<()>;
 }
 
 /// Launch a command
@@ -47,26 +48,24 @@ where
     T: ShellParser,
 {
     if let Err(error) = handle_launch::<T>() {
-        error.print_formatted();
+        match error {
+            ShellUiError::Error(_) | ShellUiError::Warning(_) => error.print_formatted(),
+            ShellUiError::Interrupt => {}
+        }
         exit(1);
     }
 }
 
-fn handle_launch<T>() -> Result<()>
+fn handle_launch<T>() -> ShellUiResult<()>
 where
     T: ShellParser,
 {
     let mut context = T::Context::new()?;
     let args = T::parse();
     if let Some(commands) = args.try_get_command() {
-        match T::run_command(&mut context, &commands) {
-            Ok(()) => Ok(()),
-            Err(error) => match error.kind() {
-                ErrorKind::Interrupted => Ok(()),
-                _ => Err(error),
-            },
-        }
+        T::run_command(&mut context, &commands)
     } else {
-        shell::launch_shell::<T>(&mut context)
+        shell::launch_shell::<T>(&mut context)?;
+        Ok(())
     }
 }
