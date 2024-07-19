@@ -66,16 +66,26 @@ where
     where
         S: ToString,
     {
-        self.map_err(|error| with_context(error, context))
+        self.map_err(|error| error.with_context(context))
     }
 }
 
-fn with_context<E, S>(error: E, context: S) -> Error
+pub trait WithContextError {
+    fn with_context<S>(self, context: S) -> Error
+    where
+        S: ToString;
+}
+
+impl<E> WithContextError for E
 where
     E: StdError + Send + Sync + 'static,
-    S: ToString,
 {
-    Error::other(ErrorWrapper::new(context.to_string(), error))
+    fn with_context<S>(self, context: S) -> Error
+    where
+        S: ToString,
+    {
+        Error::other(ErrorWrapper::new(context.to_string(), self))
+    }
 }
 
 #[derive(Debug)]
