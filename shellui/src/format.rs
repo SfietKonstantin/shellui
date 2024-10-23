@@ -315,7 +315,7 @@ where
                 header.white().bold().to_string()
             })
             .collect::<Vec<_>>();
-        let headers = headers.join(" ");
+        let headers = headers.join("   ");
 
         iter::once(headers)
             .chain(values.into_iter().map(|line| {
@@ -328,7 +328,7 @@ where
                         format!("{:<1$}", formatted, spacing)
                     })
                     .collect::<Vec<_>>();
-                line.join(" ")
+                line.join("   ")
             }))
             .collect()
     }
@@ -405,7 +405,7 @@ where
                 let header = k.as_ref().white().bold();
                 let header = format!("{:<1$}", header, size);
                 let value = self.format_value(mode.clone(), k);
-                format!("{header} {}", value.as_formatted())
+                format!("{header}   {}", value.as_formatted())
             })
             .collect()
     }
@@ -468,9 +468,9 @@ mod tests {
         ];
         let table = elements.format_table(None);
         let expected = vec![
-            "id             label   a very long header",
-            "1              label 1 value             ",
-            "a very long id l2      value2            ",
+            "id               label     a very long header",
+            "1                label 1   value             ",
+            "a very long id   l2        value2            ",
         ];
         assert_eq!(table, expected);
     }
@@ -481,9 +481,9 @@ mod tests {
 
         let table = TestValue("1", "label 1", "value").format_single(None);
         let expected = vec![
-            "id                 1",
-            "label              label 1",
-            "a very long header value",
+            "id                   1",
+            "label                label 1",
+            "a very long header   value",
         ];
         assert_eq!(table, expected);
     }
